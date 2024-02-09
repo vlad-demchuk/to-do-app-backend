@@ -1,55 +1,87 @@
-import { v4 as uuidv4 } from 'uuid';
+import { DataTypes, Op } from 'sequelize';
+import { sequelize } from './db.js';
 
-export let todos = [
-  { id: '1', title: 'NodeJs', completed: false },
-  { id: '2', title: 'JS', completed: false },
-  { id: '3', title: 'Express', completed: true },
-];
+export const Todo = sequelize.define('Todo', {
+  // Model attributes are defined here
+  title: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+  completed: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  },
+}, {
+  tableName: 'todos',
+  updatedAt: false,
+});
 
-export const getAll = () => {
+export const normalize = ({ id, title, completed }) => {
+  return { id, title, completed };
+};
+
+export const getAll = async () => {
+  const todos = await Todo.findAll({
+    order: [['title', 'ASC']],
+  });
+
   return todos;
 };
 
-export const getById = (id) => {
-  return todos.find(item => item.id === id) || null;
+export const getById = async (id) => {
+  return Todo.findByPk(id);
 };
 
 export const create = (title) => {
-  const todo = {
-    id: uuidv4(),
-    completed: false,
-    title,
-  };
-
-  todos.push(todo);
-
-  return todo;
+  return Todo.create({ title });
 };
 
-export const update = ({ id, title, completed }) => {
-  const todo = getById(id);
-
-  Object.assign(todo, { title, completed });
-
-  return todo;
+export const update = async ({ id, title, completed }) => {
+  await Todo.update({ title, completed }, { where: { id } });
 };
 
-export const remove = (id) => {
-  todos = todos.filter(todo => todo.id !== id);
+export const remove = async (id) => {
+  await Todo.destroy({
+    where: {
+      id,
+    },
+  });
 };
 
-export const removeMany = (ids) => {
-  todos = todos.filter(todo => !ids.includes(todo.id));
+const isUuid = (id) => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(id);
 };
 
-export const updateMany = (todos) => {
-  for (const { id, title, completed } of todos) {
-    const todo = getById(id);
+export const removeMany = async (ids) => {
+  await Todo.destroy({
+    where: {
+      id: {
+        [Op.in]: ids,
+      },
+    },
+  });
+};
 
-    if (!todo) {
-      continue;
+export const updateMany = async (todos) => {
+  // Managed transaction
+  const t = await sequelize.transaction();
+  //
+  // return  await sequelize.transaction(async (t) => {
+  //   for (const { id, title, completed } of todos) {
+  //     await Todo.update({ title, completed }, { where: { id }, transaction: t });
+  //   }
+  // });
+
+  // Unmanaged transaction
+  try {
+    for (const { id, title, completed } of todos) {
+      await Todo.update({ title, completed }, { where: { id }, transaction: t });
     }
 
-    Object.assign(todo, { title, completed });
+    await t.commit();
+  } catch (e) {
+    await t.rollback();
   }
-}
+};
